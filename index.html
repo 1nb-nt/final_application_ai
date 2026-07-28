@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SpeechSense AI — Full Evaluator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="wrap">
+  <div id="fileProtocolWarning" style="display:none; background:#3a1414; border:2px solid #d92d4c; color:#ffd7d7; border-radius:8px; padding:14px 16px; margin-bottom:16px; font-size:14px; line-height:1.6;">
+    <strong>⚠ This page is open directly as a file (file://) — mic access will silently fail.</strong>
+    <div style="margin-top:6px;">
+      Chrome/Edge block microphone access on pages opened this way (it's not a "secure context"), with no visible error — this is almost certainly why nothing is being transcribed, no fillers are counted, and no pauses are detected.
+      <br><br>
+      <b>Fix:</b> serve this folder over a local server instead of double-clicking index.html. Easiest options:
+      <ul style="margin:6px 0 0 18px; padding:0;">
+        <li>VS Code: right-click <code>index.html</code> → "Open with Live Server" (install the "Live Server" extension if needed)</li>
+        <li>Or open a terminal in this folder and run: <code>python -m http.server 8000</code> — then visit <code>http://localhost:8000</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <header>
+    <div class="brand-mark" aria-hidden="true">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div>
+      <div class="eyebrow">SpeechSense AI</div>
+      <h1>Full Evaluator — Pick · Record · Detect · Score</h1>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="session">Session</div>
+    <div class="tab" data-tab="history">History</div>
+    <div class="tab" data-tab="config">Names &amp; Topics</div>
+  </div>
+
+  <!-- ===================== SESSION VIEW ===================== -->
+  <div class="view active" id="view-session">
+
+    <!-- Step 1: Pick -->
+    <div class="card" id="pickCard">
+      <h2>Step 1 — Pick Speaker &amp; Topic</h2>
+      <div class="stage" id="stage">
+        <div class="label">Ready</div>
+        <div class="name" id="stageName">Press "Pick Random"</div>
+        <div class="topic" id="stageTopic">Name + topic are removed from the pool once picked</div>
+      </div>
+      <div class="row">
+        <span class="badge">Names left: <b id="nameCount">0</b></span>
+        <span class="badge">Topics left: <b id="topicCount">0</b></span>
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <button class="btn-primary" id="pickBtn">🎲 Pick Random</button>
+        <button class="btn-ghost" id="rerollTopicBtn" disabled>🔁 Shuffle Topic</button>
+        <button class="btn-ghost" id="shuffleBtn">🔀 Shuffle Pool</button>
+        <button class="btn-ghost" id="resetCycleBtn">↺ Reset Cycle</button>
+      </div>
+      <div class="note" id="poolEmptyHint" style="display:none; color:var(--warn);">
+        Pool is empty — every name/topic has already been picked this cycle. Click "Reset Cycle" above to refill it.
+      </div>
+    </div>
+
+    <!-- Step 2: Record -->
+    <div class="card" id="recordCard" style="display:none;">
+      <h2>Step 2 — Record (60s) &amp; Live Violation Detection</h2>
+      <div class="row" style="margin-bottom:10px;">
+        <span class="badge" id="statusBadge">READY</span>
+        <span class="badge" id="modeBadge">mic mode</span>
+      </div>
+      <div id="manualModeWarning" style="display:none; background:#3a1414; border:1px solid #d92d4c; color:#ffd7d7; border-radius:8px; padding:10px 14px; margin-bottom:12px; font-size:13.5px; line-height:1.5;">
+        <strong>⚠ Running without mic-based detection.</strong>
+        <span id="manualModeWarningText">Filler-sound and long-pause detection need live mic access, which isn't available right now.</span>
+      </div>
+      <div class="alert" id="alertBox">⚠ <span id="alertText"></span></div>
+
+      <div class="row" style="margin-bottom:10px; align-items:center;">
+        <span class="badge" id="thinkTimerBadge">🧠 Think Time 1:00</span>
+        <button class="btn-ghost" id="startThinkBtn">▶ Start Think Timer</button>
+        <button class="btn-ghost" id="resetThinkBtn" style="display:none;">↺ Reset Think Timer</button>
+      </div>
+      <div class="note" style="margin-top:-4px; margin-bottom:10px;">A separate 60-second timer for the speaker to think before recording — it runs on its own and has no effect on the speaking timer, WPM, or violation detection below.</div>
+
+      <div class="row" style="margin-bottom:10px; align-items:center;">
+        <label for="langSelect" style="font-size:12px; color:var(--ink-soft); font-family:monospace;">SPEECH LANGUAGE</label>
+        <select id="langSelect" style="background:var(--card-2); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:6px 8px; font-family:monospace;">
+          <option value="en-US">English</option>
+          <option value="hi-IN">Hindi</option>
+          <option value="ta-IN">Tamil</option>
+          <option value="te-IN">Telugu</option>
+          <option value="kn-IN">Kannada</option>
+          <option value="ml-IN">Malayalam</option>
+        </select>
+      </div>
+      <div class="note" style="margin-top:-4px; margin-bottom:10px;">Violations (fillers, repeats, pauses) are detected and counted the whole time, but the speaker is <b>never cut off</b> — they always get the full time set below. Filler words/sounds (um, uh, like, basically...) are flagged once they pass the threshold — detected both from transcribed text <b>and</b> straight from the microphone's audio level, so a quick "umm"/"ahh" still counts even if the speech recognizer never turns it into text; words the speaker keeps reusing across the whole speech are also flagged as "repeats" — <b>except words that are part of the topic title itself</b>; and a long pause keeps adding extra violations for every extra chunk of continued silence, not just once. The combined violation total <b>caps at 5</b> — once 5 is reached, the count stops climbing, but the exact moment it was reached is noted separately and the speaker keeps going for the full time.</div>
+
+      <div class="grid3">
+        <div class="stat">
+          <div class="v" id="timerVal">0:00</div>
+          <div class="l" id="timerTotalLabel">of 1:00</div>
+          <div class="progress-track"><div class="progress-fill" id="timerProgressFill"></div></div>
+        </div>
+        <div class="stat"><div class="v" id="wpmVal">0</div><div class="l">words / min</div></div>
+        <div class="stat"><div class="v" id="violVal">0</div><div class="l">violations (noted)</div></div>
+      </div>
+
+      <canvas id="waveform" width="600" height="70"></canvas>
+
+      <div id="liveTranscript" style="display:none;"></div>
+      <textarea id="manualTranscript" placeholder="Type the speech here while the timer runs (used when mic/speech recognition isn't available)..." style="display:none;"></textarea>
+
+      <div class="row" style="margin-top:10px;">
+        <span class="badge" id="fillerBadge">Fillers 0</span>
+        <span class="badge" id="repeatBadge">Repeats 0</span>
+        <span class="badge" id="pauseBadge">Pauses 0</span>
+        <span class="badge" id="capBadge" style="display:none;">Limit reached at --</span>
+      </div>
+      <div id="diagLine" style="font-family:monospace; font-size:11px; color:var(--ink-faint); margin-top:6px;"></div>
+
+      <div class="row" style="margin-top:14px;">
+        <button class="btn-primary" id="startBtn">🎙 Start Recording</button>
+        <button class="btn-danger" id="stopBtn" style="display:none;">⏹ Stop Early</button>
+        <button class="btn-ghost" id="rerecordBtn" style="display:none;">↺ Rerecord (reset timer)</button>
+        <button class="btn-ghost" id="cancelBtn">Cancel</button>
+      </div>
+
+    </div>
+
+    <!-- Step 3: Results -->
+    <div class="card" id="resultsCard" style="display:none;">
+      <h2>Step 3 — AI Evaluation Result</h2>
+      <div class="overall-ring" id="overallRing" style="--score:0;">
+        <div class="overall-ring-inner">
+          <div class="v" id="overallScore">0</div>
+          <div class="l">OVERALL SCORE</div>
+        </div>
+      </div>
+      <div class="scores" id="scoreBoxes"></div>
+      <div class="two-col">
+        <div>
+          <div class="badge" style="color:var(--good); border-color:rgba(15,138,88,.35); background:rgba(15,138,88,.1);">Strengths</div>
+          <ul class="fb" id="strengthsList"></ul>
+        </div>
+        <div>
+          <div class="badge" style="color:var(--danger); border-color:rgba(224,38,77,.35); background:rgba(224,38,77,.1);">Weaknesses</div>
+          <ul class="fb" id="weaknessesList"></ul>
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        <div class="badge">Suggestions</div>
+        <ul class="fb" id="suggestionsList"></ul>
+      </div>
+      <div style="margin-top:12px;">
+        <div class="badge">Transcript</div>
+        <div class="transcript-box" id="resultsTranscript"></div>
+      </div>
+      <div class="two-col" style="margin-top:12px;">
+        <div class="stat" style="text-align:left;"><div class="l">PRACTICE PLAN</div><div style="font-size:13px; margin-top:6px;" id="practicePlan"></div></div>
+        <div class="stat" style="text-align:left;"><div class="l">MOTIVATION</div><div style="font-size:13px; margin-top:6px;" id="motivational"></div></div>
+      </div>
+      <div class="row" style="margin-top:16px;">
+        <button class="btn-primary" id="saveBtn">✔ Save to History</button>
+        <button class="btn-ghost" id="rerecordFromResultsBtn">↺ Rerecord (same name/topic)</button>
+        <button class="btn-ghost" id="discardBtn">Discard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== HISTORY VIEW ===================== -->
+  <div class="view" id="view-history">
+    <div class="card">
+      <h2>Session History</h2>
+      <div class="row" id="historyControls" style="display:none; margin-bottom:12px;">
+        <button class="btn-ghost" id="downloadAllReportsBtn">⬇ Generate report for every user</button>
+        <button class="btn-danger" id="clearHistoryBtn">🗑 Clear history</button>
+      </div>
+      <div id="historyList"></div>
+    </div>
+  </div>
+
+  <!-- ===================== CONFIG VIEW ===================== -->
+  <div class="view" id="view-config">
+    <div class="two-col">
+      <div class="card">
+        <h2>Names (one per line)</h2>
+        <textarea class="list" id="namesInput"></textarea>
+        <div class="row" style="margin-top:10px;"><button class="btn-ghost" id="applyNamesBtn">Apply names list</button></div>
+      </div>
+      <div class="card">
+        <h2>Topics (one per line)</h2>
+        <textarea class="list" id="topicsInput"></textarea>
+        <div class="row" style="margin-top:10px;"><button class="btn-ghost" id="applyTopicsBtn">Apply topics list</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Timing &amp; Speed</h2>
+      <div class="row" style="align-items:center;">
+        <label for="sessionSecondsInput" style="font-size:12px; color:var(--ink-soft); font-family:monospace;">SPEAKING TIME (SECONDS)</label>
+        <input type="number" id="sessionSecondsInput" min="10" max="600" step="5"
+          style="width:80px; background:var(--card-2); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:6px 8px; font-family:monospace;">
+      </div>
+      <div class="note">Every speaker gets this much time, no matter how many violations are flagged — violations are only noted, never used to cut anyone off early.</div>
+      <div class="row" style="align-items:center; margin-top:12px;">
+        <label for="baseWpmInput" style="font-size:12px; color:var(--ink-soft); font-family:monospace;">BASE SPEED (WORDS / MIN)</label>
+        <input type="number" id="baseWpmInput" min="60" max="220" step="5"
+          style="width:80px; background:var(--card-2); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:6px 8px; font-family:monospace;">
+      </div>
+      <div class="note">The "ideal" pace band used for scoring is centered on this value (±20 WPM).</div>
+      <div class="row" style="margin-top:10px;"><button class="btn-ghost" id="applyTimingBtn">Apply timing &amp; speed settings</button></div>
+    </div>
+    <div class="card">
+      <h2>AI Transcription</h2>
+      <div class="row" style="align-items:center;">
+        <label for="transcriptionApiUrlInput" style="font-size:12px; color:var(--ink-soft); font-family:monospace; width:220px;">REMOTE TRANSCRIPTION API</label>
+        <input type="text" id="transcriptionApiUrlInput" placeholder="http://localhost:3001/api/transcribe"
+          style="width:260px; background:var(--card-2); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:6px 8px; font-family:monospace;">
+      </div>
+      <div class="note">Leave empty to use the built-in browser speech recognition. If you run the included local transcription server, the app will send captured audio there after each session for a more accurate transcript.</div>
+    </div>
+    <div class="card">
+      <h2>Violation Detection Thresholds</h2>
+      <div class="row" style="align-items:center;">
+        <label for="fillerThresholdInput" style="font-size:12px; color:var(--ink-soft); font-family:monospace; width:220px;">FILLER WORD THRESHOLD</label>
+        <input type="number" id="fillerThresholdInput" min="0" max="20" step="1"
+          style="width:80px; background:var(--card-2); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:6px 8px; font-family:monospace;">
+      </div>
+      <div class="note">Number of filler words allowed before it's flagged as a violation.</div>
+      <div class="row" style="align-items:center; margin-top:12px;">
+        <label for="repeatThresholdInput" style="font-size:12px; color:var(--ink-soft); font-family:monospace; width:220px;">REPEAT WORD THRESHOLD</label>
+        <input type="number" id="repeatThresholdInput" min="2" max="10" step="1"
+          style="width:80px; background:var(--card-2); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:6px 8px; font-family:monospace;">
+      </div>
+      <div class="note">How many times a word must repeat immediately in a row to be flagged.</div>
+      <div class="row" style="align-items:center; margin-top:12px;">
+        <label for="pauseThresholdInput" style="font-size:12px; color:var(--ink-soft); font-family:monospace; width:220px;">PAUSE THRESHOLD (SECONDS)</label>
+        <input type="number" id="pauseThresholdInput" min="1" max="30" step="1"
+          style="width:80px; background:var(--card-2); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:6px 8px; font-family:monospace;">
+      </div>
+      <div class="note">Seconds of silence before a long pause is flagged.</div>
+      <div class="row" style="margin-top:10px;"><button class="btn-ghost" id="applyViolationBtn">Apply violation settings</button></div>
+    </div>
+    <div class="card">
+      <h2>Beep Sound</h2>
+      <div class="row" style="align-items:center;">
+        <input type="checkbox" id="beepEnabledInput" style="width:16px; height:16px;">
+        <label for="beepEnabledInput" style="font-size:13px;">Play a beep sound on violation alerts</label>
+      </div>
+      <div class="note" style="margin-top:6px;">Off by default — violations still flash on screen and get logged, they just don't beep.</div>
+      <div class="note" style="margin-top:0;">Upload your own beep/alarm sound (mp3/wav) to use if beeping is turned on.</div>
+      <div class="row" style="margin-top:10px; align-items:center;">
+        <input type="file" id="beepFileInput" accept="audio/*">
+        <button class="btn-ghost" id="testBeepBtn">▶ Test sound</button>
+        <button class="btn-danger" id="clearBeepBtn">Remove custom sound</button>
+      </div>
+      <div class="note" id="beepStatus">Using default synthesized beep.</div>
+    </div>
+    <div class="card">
+      <button class="btn-danger" id="resetAllBtn">Reset all data (names, topics, history)</button>
+    </div>
+  </div>
+
+  <footer>Runs 100% locally in your browser — mic audio and speech recognition never leave your machine. Data is saved to localStorage. Best supported in Chrome/Edge (Web Speech API).</footer>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/scoring.js"></script>
+<script src="js/beep.js"></script>
+<script src="js/tabs.js"></script>
+<script src="js/picker.js"></script>
+<script src="js/think-timer.js"></script>
+<script src="js/recording.js"></script>
+<script src="js/results.js"></script>
+<script src="js/history.js"></script>
+<script src="js/config-ui.js"></script>
+<!-- main.js must load LAST: it's the only file that actually runs startup code
+     (loads saved state, does the first render) rather than just defining functions
+     or attaching event listeners, so everything above must exist first. -->
+<script src="js/main.js"></script>
+</body>
+</html>
