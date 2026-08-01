@@ -8,15 +8,26 @@ function normalizeTranscriptText(text){
   return (text || "").replace(/\s+/g, " ").trim();
 }
 function selectBestTranscriptCandidate(results, fallbackText = ""){
-  const candidates = (results || [])
-    .map(r => ({
-      text: normalizeTranscriptText(r && r.transcript ? r.transcript : ""),
-      confidence: typeof r?.confidence === "number" ? r.confidence : 0
-    }))
+  const normalizedFallback = normalizeTranscriptText(fallbackText);
+  const items = Array.isArray(results)
+    ? results
+    : (results ? [results] : []);
+
+  const candidates = items
+    .map(item => {
+      if(typeof item === "string"){
+        return { text: normalizeTranscriptText(item), confidence: 0 };
+      }
+      const transcript = item && typeof item === "object" && "transcript" in item ? item.transcript : item;
+      return {
+        text: normalizeTranscriptText(typeof transcript === "string" ? transcript : ""),
+        confidence: typeof item?.confidence === "number" ? item.confidence : 0
+      };
+    })
     .filter(item => item.text);
 
   if(!candidates.length){
-    return normalizeTranscriptText(fallbackText);
+    return normalizedFallback;
   }
 
   return candidates.reduce((best, candidate) => {
@@ -29,7 +40,7 @@ function selectBestTranscriptCandidate(results, fallbackText = ""){
       return candidate;
     }
     return best;
-  }, { text: "", confidence: -1 }).text || normalizeTranscriptText(fallbackText);
+  }, { text: "", confidence: -1 }).text || normalizedFallback;
 }
 function mergeTranscriptSegment(existingText, incomingText){
   const existing = normalizeTranscriptText(existingText);

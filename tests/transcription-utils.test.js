@@ -23,10 +23,13 @@ const context = vm.createContext({
     pauseThresholdSec: 3,
     baseWPM: 130,
     sessionSeconds: 60
-  }
+  },
+  currentFillerWords: () => [],
+  repeatThreshold: () => 3
 });
 
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'utils.js'), 'utf8'), context);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'scoring.js'), 'utf8'), context);
 
 test('selectBestTranscriptCandidate prefers the highest-confidence result', () => {
   const results = [
@@ -45,4 +48,12 @@ test('selectBestTranscriptCandidate falls back to normalized text when candidate
   ];
 
   assert.equal(context.selectBestTranscriptCandidate(results, '   please try again   '), 'please try again');
+});
+
+test('selectBestTranscriptCandidate handles a single fallback transcript object', () => {
+  assert.equal(context.selectBestTranscriptCandidate({ transcript: '   hello from fallback   ' }, 'ignored fallback'), 'hello from fallback');
+});
+
+test('detectImmediateRepeats ignores repeated words that are part of the topic title', () => {
+  assert.equal(context.detectImmediateRepeats('leadership leadership leadership', 'leadership skills').length, 0);
 });

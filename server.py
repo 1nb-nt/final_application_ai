@@ -1,12 +1,18 @@
 import base64
-import os
-import urllib.request
-import urllib.error
 import json
+import os
+import urllib.error
+import urllib.request
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.responses import JSONResponse
+
+BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="SpeechSense transcription server")
 app.add_middleware(
@@ -59,6 +65,16 @@ def _transcribe_with_provider(audio_bytes: bytes):
 
     raise RuntimeError(f"Unsupported transcription provider: {provider}")
 
+@app.get("/")
+def serve_index():
+    return FileResponse(BASE_DIR / "index.html")
+
+
+@app.get("/index.html")
+def serve_index_html():
+    return FileResponse(BASE_DIR / "index.html")
+
+
 @app.post("/api/transcribe")
 def transcribe(req: TranscribeRequest):
     try:
@@ -70,6 +86,9 @@ def transcribe(req: TranscribeRequest):
         return {"transcript": text}
     except Exception as exc:
         return JSONResponse({"transcript": "", "error": str(exc)}, status_code=500)
+
+
+app.mount("/", StaticFiles(directory=str(BASE_DIR), html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn

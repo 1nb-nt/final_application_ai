@@ -226,7 +226,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .stage .topic {
   font-family: var(--font-body);
   font-size: 20px;
-  font-weight: 600;
+  font-weight: 800;
   color: var(--accent-2);
   max-width: 680px;
   line-height: 1.45;
@@ -324,6 +324,14 @@ textarea#manualTranscript { resize: vertical; }
   border: 1px solid var(--line);
   color: var(--ink-soft);
   transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+#thinkTimerBadge {
+  font-size: 13px;
+  padding: 8px 14px;
+  min-width: 168px;
+  justify-content: center;
+  display: inline-flex;
+  align-items: center;
 }
 .badge.on {
   background: var(--danger-tint);

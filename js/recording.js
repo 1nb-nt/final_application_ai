@@ -163,7 +163,7 @@ function analyzeTranscript(full){
   }
 
   // ---- Immediate back-to-back repeats ("the the the") ----
-  const repeatRuns = detectImmediateRepeats(full);
+  const repeatRuns = detectImmediateRepeats(full, topic);
   repeatRuns.forEach(run=>{
     if(run.len >= repeatThreshold() && !repeatRunsAlerted.has(run.startIndex)){
       repeatRunsAlerted.add(run.startIndex);

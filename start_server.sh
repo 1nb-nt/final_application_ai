@@ -1,7 +1,12 @@
 #!/bin/bash
-# Serves this folder at http://localhost:8000 instead of opening index.html
-# directly as a file:// page — this is required for mic access to work in
-# Chrome/Edge (they silently block the microphone on file:// pages).
+# Starts the full app locally at http://127.0.0.1:3001.
 cd "$(dirname "$0")"
-( sleep 1; open "http://localhost:8000/index.html" 2>/dev/null || xdg-open "http://localhost:8000/index.html" 2>/dev/null ) &
-python3 -m http.server 8000
+if [ -x ./.venv/bin/python ]; then
+  PYTHON=./.venv/bin/python
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON=python3
+else
+  PYTHON=python
+fi
+( sleep 1; open "http://127.0.0.1:3001/" 2>/dev/null || xdg-open "http://127.0.0.1:3001/" 2>/dev/null ) &
+"$PYTHON" -m uvicorn server:app --host 127.0.0.1 --port 3001

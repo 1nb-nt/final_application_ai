@@ -37,10 +37,11 @@ function countFillers(transcript){
   }
   return total;
 }
-function detectImmediateRepeats(transcript){
+function detectImmediateRepeats(transcript, topic = ""){
   // Strip punctuation before comparing words — otherwise "yeah," and "yeah" (or a
   // trailing period on only one occurrence) are treated as different words and a
   // genuine repeat goes undetected.
+  const topicWords = topicWordSet(topic);
   const words = transcript.toLowerCase().replace(/[^a-z0-9'\s]/g,"").split(/\s+/).filter(Boolean);
   // Returns EVERY maximal immediate-repeat run found (each tagged with the word and
   // the index it starts at), not just whichever single run is longest in the whole
@@ -49,11 +50,12 @@ function detectImmediateRepeats(transcript){
   const runs = [];
   let i=0;
   while(i<words.length){
-    if(words[i].length<=1){ i++; continue; }
+    const word = words[i];
+    if(word.length<=1 || topicWords.has(word)){ i++; continue; }
     let j=i;
-    while(j+1<words.length && words[j+1]===words[i]) j++;
+    while(j+1<words.length && words[j+1]===word) j++;
     const runLen = j-i+1;
-    if(runLen>=2) runs.push({ word: words[i], len: runLen, startIndex: i });
+    if(runLen>=2) runs.push({ word, len: runLen, startIndex: i });
     i=j+1;
   }
   return runs;
