@@ -29,6 +29,7 @@ const context = vm.createContext({
 });
 
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'utils.js'), 'utf8'), context);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'config.js'), 'utf8'), context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'scoring.js'), 'utf8'), context);
 
 test('selectBestTranscriptCandidate prefers the highest-confidence result', () => {
@@ -56,4 +57,24 @@ test('selectBestTranscriptCandidate handles a single fallback transcript object'
 
 test('detectImmediateRepeats ignores repeated words that are part of the topic title', () => {
   assert.equal(context.detectImmediateRepeats('leadership leadership leadership', 'leadership skills').length, 0);
+});
+
+test('detectImmediateRepeats ignores singular/plural topic words', () => {
+  assert.equal(context.detectImmediateRepeats('color color color', 'colors and shape').length, 0);
+});
+
+test('topicOverlapScore normalizes singular/plural when matching topic relevance', () => {
+  const score = context.topicOverlapScore('The colors are bright and the color is nice', 'color');
+  assert.equal(Math.round(score * 100), 100);
+});
+
+test('heuristicEvaluation flags grammar weakness when filler and repeat violations are high', () => {
+  const result = context.heuristicEvaluation({
+    transcript: 'um um um so so so this is a test of bad grammar',
+    topic: 'public speaking',
+    elapsedSec: 30,
+    violations: { fillerCount: 4, repeatCount: 3, pauseCount: 0, overusedWords: {} }
+  });
+  assert.equal(result.feedback.weaknesses.some(w => w.includes('Grammar')), true);
+  assert.equal(result.scores.grammar < 55, true);
 });

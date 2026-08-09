@@ -6,20 +6,18 @@ const FILLER_WORDS_BY_LANG = {
   // matched here as literal words/phrases. Grammatical words (the, a, an, is, are,
   // was, were, I, you, we, they, he, she, it, and, but, or, to, of, in, on, for,
   // with, etc.) are never in this list, so they're never flagged as fillers.
-  "en-US": ["like","you know"],
+  "en-US": ["so","like","you know"],
   "hi-IN": ["matlab","vo","waise","bas"],
   "ta-IN": ["idhu","adhu","apparam"],
   "te-IN": ["ala","enti","ilanti"],
   "kn-IN": ["andre","enu","alva"],
   "ml-IN": ["athu","ith","aa pole"]
 };
-// Universal non-lexical filler *sounds* — catches "uh", "uhh", "um", "umm", "er", "ah"
-// (and their naturally drawn-out forms like "uhhh"/"ummm"/"err"/"ahh"), regardless of
-// language selected. Matched separately from the word lists above so short
-// vocalizations are never missed just because a language's list omits them.
-// (Previously "er" required a trailing "m" to match at all, so a plain "er" was
-// silently never counted — fixed by giving each sound its own simple pattern.)
-const FILLER_SOUND_REGEX = /\b(u+h+|u+m+|h+m+|e+r+m*|a+h+)\b/gi;
+// Universal non-lexical filler *sounds* — catches the minimal pause/filler forms
+// like "uh", "uhh", "um", "umm", "er", "ah" only. Longer vocalizations
+// such as "ahhh", "uhhh", or "mmmm" are intentionally excluded from this
+// transcription-based filler matcher.
+const FILLER_SOUND_REGEX = /\b(?:um|umm|hm|hmm|er|erm|ah)\b/gi;
 function currentFillerWords(){
   return FILLER_WORDS_BY_LANG[state.lang] || FILLER_WORDS_BY_LANG["en-US"];
 }

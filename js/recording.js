@@ -1,10 +1,11 @@
 /* ==================== RECORDING + VIOLATION DETECTION ==================== */
 let phase = "ready"; // ready | recording | evaluating | done
 let elapsed = 0, transcript = "", manualMode = false;
-let violations = { fillerCount:0, repeatCount:0, pauseCount:0, overusedWords:{} }; // raw counts, used for scoring + noted separately
+let violations = { fillerCount:0, repeatCount:0, pauseCount:0, grammarCount:0, overusedWords:{} }; // raw counts, used for scoring + noted separately
 let violationEvents = 0;       // total violations noted (does not stop the speaker)
-const VIOLATION_CAP = 5;       // combined total (fillers+repeats+pauses) stops climbing once this is hit
+const VIOLATION_CAP = 5;       // combined total (fillers+repeats+pauses/grammar) stops climbing once this is hit
 let violationCapReached = false; // true once the cap has been hit for this session
+let grammarViolationAlerted = false;
 let violationCapTime = null;     // elapsed seconds at the moment the cap was reached (noted separately)
 let lastFillerBeepCount = 0;   // filler word count at last alert
 let repeatRunsAlerted = new Set(); // start-index of each immediate-repeat run already alerted on —
@@ -54,10 +55,11 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 function resetRecordingUI(){
   phase = "ready"; elapsed = 0; transcript = ""; manualMode = !SR;
   updatePickLock();
-  violations = { fillerCount:0, repeatCount:0, pauseCount:0, overusedWords:{} };
+  violations = { fillerCount:0, repeatCount:0, pauseCount:0, grammarCount:0, overusedWords:{} };
   violationEvents = 0; lastFillerBeepCount = 0; repeatRunsAlerted = new Set();
   overuseAlerted = {}; pauseMultiplier = 0; acousticFillerCount = 0; unconfirmedAcousticFillers = [];
   gotAnyRecognitionResult = false; consecutiveRecognitionErrors = 0;
+  grammarViolationAlerted = false;
   voiceActive = false; voiceStartedAt = 0; wordsAtVoiceStart = 0; lastLiveInterim = ""; pendingBurstCheck = null;
   voicedRatioSum = 0; voicedRatioSamples = 0; lastAcousticFillerAt = 0;
   fired = { pause:false };
@@ -86,6 +88,7 @@ function resetRecordingUI(){
   document.getElementById("violVal").textContent = "0";
   document.getElementById("fillerBadge").textContent = "Fillers 0";
   document.getElementById("repeatBadge").textContent = "Repeats 0";
+  document.getElementById("grammarBadge").textContent = "Grammar 0";
   document.getElementById("pauseBadge").textContent = "Pauses 0";
   const diagEl0 = document.getElementById("diagLine");
   if(diagEl0) diagEl0.textContent = "";
@@ -186,8 +189,30 @@ function analyzeTranscript(full){
     }
   });
 
+  const grammarScore = clamp(90 - violations.fillerCount*5 - violations.repeatCount*6, 20, 98);
+  if(grammarScore < 55){
+    violations.grammarCount = 1;
+    if(!grammarViolationAlerted){
+      grammarViolationAlerted = true;
+      registerViolation();
+      newAlert = newAlert || `Grammar issues detected (${Math.round(grammarScore)} score).`;
+    }
+  } else {
+    violations.grammarCount = 0;
+  }
+
   if(newAlert) flashAlert(newAlert);
   updateStatsUI(full);
+
+  const topicRel = currentPick ? topicOverlapScore(full, currentPick.topic) : 1;
+  const wordCount = full.trim().split(/\s+/).filter(Boolean).length;
+  const hasSpokenEnough = wordCount >= 10 || elapsed >= 12;
+  // Topic relevance is computed for scoring and feedback only; it no longer
+  // triggers an early session end during recording.
+  if(phase === "recording" && hasSpokenEnough && topicRel < 0.50){
+    // Optionally, we could warn the speaker here, but we do not end the session.
+  }
+
   return !!newAlert; // true if this call already surfaced a filler/repeat violation
 }
 
@@ -202,9 +227,11 @@ function updateStatsUI(full){
   }
   document.getElementById("fillerBadge").textContent = "Fillers " + violations.fillerCount;
   document.getElementById("repeatBadge").textContent = "Repeats " + violations.repeatCount;
+  document.getElementById("grammarBadge").textContent = "Grammar " + violations.grammarCount;
   document.getElementById("pauseBadge").textContent = "Pauses " + violations.pauseCount;
   document.getElementById("fillerBadge").classList.toggle("on", violations.fillerCount>fillerThreshold());
   document.getElementById("repeatBadge").classList.toggle("on", violations.repeatCount>0);
+  document.getElementById("grammarBadge").classList.toggle("on", violations.grammarCount>0);
   document.getElementById("pauseBadge").classList.toggle("on", violations.pauseCount>0);
 }
 
@@ -238,6 +265,13 @@ async function stopRemoteCapture(){
   });
 }
 
+async function promiseWithTimeout(promise, timeoutMs, fallbackValue=""){
+  return Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(() => resolve(fallbackValue), timeoutMs))
+  ]);
+}
+
 async function transcribeWithRemoteApi(blob){
   if(!blob || !state.transcriptionApiUrl) return "";
   try{
@@ -247,13 +281,15 @@ async function transcribeWithRemoteApi(blob){
       reader.onerror = ()=>reject(new Error("failed to read audio blob"));
       reader.readAsDataURL(blob);
     });
-    const response = await fetch(state.transcriptionApiUrl, {
+    const fetchPromise = fetch(state.transcriptionApiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ audioBase64: base64, mimeType: blob.type || "audio/webm" })
-    });
-    const data = await response.json();
-    return (data && data.transcript ? data.transcript : "").trim();
+    }).then(async response => {
+      const data = await response.json();
+      return (data && data.transcript ? data.transcript : "").trim();
+    }).catch(()=>"");
+    return await promiseWithTimeout(fetchPromise, 7000, "");
   } catch(e){
     return "";
   }
@@ -705,6 +741,9 @@ async function finishRecording(){
   // at the moment recording stopped — otherwise the last few words spoken right before
   // Stop/timeout never made it into the saved transcript.
   if(!manualMode) commitPendingInterim();
+  // Use the live built-in transcript captured during recording by default.
+  // Remote transcription is only attempted if the user has explicitly configured
+  // a transcription API URL, otherwise the live transcript is preserved exactly.
   const remoteTranscript = state.transcriptionApiUrl && !manualMode ? await transcribeWithRemoteApi(await stopRemoteCapture()) : "";
   stopAll();
   if(remoteTranscript){

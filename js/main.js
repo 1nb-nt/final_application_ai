@@ -16,4 +16,10 @@ renderPicker();
 if(location.protocol === "file:"){
   const el = document.getElementById("fileProtocolWarning");
   if(el) el.style.display = "block";
+  const startBtn = document.getElementById("startBtn");
+  if(startBtn){
+    startBtn.disabled = true;
+    startBtn.textContent = "Start disabled on file://";
+    startBtn.title = "Microphone recording is disabled on file:// pages. Use http://localhost instead.";
+  }
 }

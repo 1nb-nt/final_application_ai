@@ -98,6 +98,8 @@
         </select>
       </div>
       <div class="note" style="margin-top:-4px; margin-bottom:10px;">Violations (fillers, repeats, pauses) are detected and counted the whole time, but the speaker is <b>never cut off</b> — they always get the full time set below. Filler words/sounds (um, uh, like, basically...) are flagged once they pass the threshold — detected both from transcribed text <b>and</b> straight from the microphone's audio level, so a quick "umm"/"ahh" still counts even if the speech recognizer never turns it into text; words the speaker keeps reusing across the whole speech are also flagged as "repeats" — <b>except words that are part of the topic title itself</b>; and a long pause keeps adding extra violations for every extra chunk of continued silence, not just once. The combined violation total <b>caps at 5</b> — once 5 is reached, the count stops climbing, but the exact moment it was reached is noted separately and the speaker keeps going for the full time.</div>
+      <div class="note" style="margin-top:0; margin-bottom:10px;">If topic relevance drops below 50% after the speaker has spoken enough words, the session will end early and the result screen will show the relevancy-driven stop.</div>
+      <div class="note" style="margin-top:0; margin-bottom:10px;">Poor grammar also counts as a session violation once the speech is evaluated, and it contributes toward the same combined violation cap as fillers, repeats, and pauses.</div>
 
       <div class="grid3">
         <div class="stat">
@@ -117,6 +119,7 @@
       <div class="row" style="margin-top:10px;">
         <span class="badge" id="fillerBadge">Fillers 0</span>
         <span class="badge" id="repeatBadge">Repeats 0</span>
+        <span class="badge" id="grammarBadge">Grammar 0</span>
         <span class="badge" id="pauseBadge">Pauses 0</span>
         <span class="badge" id="capBadge" style="display:none;">Limit reached at --</span>
       </div>
@@ -220,7 +223,7 @@
         <input type="text" id="transcriptionApiUrlInput" placeholder="http://localhost:3001/api/transcribe"
           style="width:260px; background:var(--card-2); border:1px solid var(--line); border-radius:8px; color:var(--ink); padding:6px 8px; font-family:monospace;">
       </div>
-      <div class="note">Leave empty to use the built-in browser speech recognition. If you run the included local transcription server, the app will send captured audio there after each session for a more accurate transcript.</div>
+      <div class="note">Leave empty to use the built-in browser speech recognition and display the live transcript from the first word spoken until the session ends. Only enter a URL here if you want to optionally replace the final session transcript with a remote transcription result.</div>
     </div>
     <div class="card">
       <h2>Violation Detection Thresholds</h2>

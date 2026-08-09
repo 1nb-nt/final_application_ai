@@ -51,7 +51,7 @@ function detectImmediateRepeats(transcript, topic = ""){
   let i=0;
   while(i<words.length){
     const word = words[i];
-    if(word.length<=1 || topicWords.has(word)){ i++; continue; }
+    if(word.length<=1 || isTopicWord(word, topicWords)){ i++; continue; }
     let j=i;
     while(j+1<words.length && words[j+1]===word) j++;
     const runLen = j-i+1;
@@ -76,22 +76,33 @@ const GLOBAL_STOPWORDS = new Set([
 function extractContentWords(text){
   return (text||"").toLowerCase().replace(/[^a-z0-9'\s]/g," ").split(/\s+/).filter(Boolean);
 }
+function stripIntroGreeting(text){
+  return (text||"").trim().replace(/^(?:good\s+morning|good\s+afternoon|good\s+evening|good\s+day|hello|hi|hey|greetings|dear)(?:[\s,!.:-]+|$)/i, "");
+}
 function topicWordSet(topic){
-  return new Set(extractContentWords(topic).filter(w=>!GLOBAL_STOPWORDS.has(w)));
+  return new Set(extractContentWords(topic).filter(w=>!GLOBAL_STOPWORDS.has(w)).map(w=>normalizeTopicWord(w)));
+}
+function normalizeTopicWord(word){
+  if(word.endsWith("s") && word.length>3) return word.slice(0,-1);
+  return word;
+}
+function isTopicWord(word, topicWords){
+  const normalized = normalizeTopicWord(word);
+  return topicWords.has(normalized);
 }
 // Flags content words the speaker keeps reusing across the WHOLE speech (not just back-to-back),
 // e.g. saying "basically" or a pet word many separate times. Words that are part of the topic
 // title are deliberately excluded, since naturally repeating on-topic words isn't a violation.
 function detectOveruseWords(transcript, topic){
   const topicWords = topicWordSet(topic);
-  const fillerFlat = new Set(currentFillerWords().map(w=>w.replace(/\s+/g,"")));
+  const fillerFlat = new Set(currentFillerWords().map(w=>w.replace(/\s+/g,"").replace(/[^a-z0-9]/gi,"").toLowerCase()));
   const words = extractContentWords(transcript);
   const freq = {};
   words.forEach(w=>{
     if(w.length<=2) return;
     if(GLOBAL_STOPWORDS.has(w)) return;
-    if(topicWords.has(w)) return;       // on-topic word — expected to repeat, not a violation
-    if(fillerFlat.has(w)) return;       // already tracked separately as a filler word
+    if(isTopicWord(w, topicWords)) return;       // on-topic word — expected to repeat, not a violation
+    if(fillerFlat.has(w.replace(/[^a-z0-9]/gi,"").toLowerCase())) return;       // already tracked separately as a filler word
     freq[w] = (freq[w]||0)+1;
   });
   return freq;
@@ -103,14 +114,23 @@ function computeWPM(transcript, elapsedSec){
 }
 function topicOverlapScore(transcript, topicText){
   const stop = new Set(["the","a","an","is","are","you","your","of","to","in","on","and","or","for","it","this","that","be","can","how","what","do","does","would","should","if","i"]);
-  const norm = s => s.toLowerCase().replace(/[^a-z0-9\s]/g,"").split(/\s+/).filter(w=>w && !stop.has(w));
+  const normalize = w => {
+    const cleaned = w.toLowerCase().replace(/[^a-z0-9]/g,"");
+    return cleaned.endsWith("s") && cleaned.length>3 ? cleaned.slice(0,-1) : cleaned;
+  };
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9\s]/g," ").split(/\s+/).filter(w=>w && !stop.has(w)).map(normalize);
+  const cleanedTranscript = stripIntroGreeting(transcript);
   const topicWords = new Set(norm(topicText));
-  const speechWords = norm(transcript);
-  if(topicWords.size===0 || speechWords.length===0) return 0.5;
+  const speechWords = norm(cleanedTranscript);
+  if(topicWords.size===0 || speechWords.length===0) return 0.0;
   let hits=0; speechWords.forEach(w=>{ if(topicWords.has(w)) hits++; });
-  const ratio = clamp(hits / Math.max(6, topicWords.size), 0, 1);
-  return clamp(0.35 + ratio*1.3, 0, 1);
+  const divisor = topicWords.size <= 3 ? topicWords.size : Math.max(6, topicWords.size);
+  const ratio = clamp(hits / divisor, 0, 1);
+  const minScore = topicWords.size <= 3 ? 0.5 : 0.35;
+  const maxScore = 1;
+  return clamp(minScore + ratio * (maxScore - minScore), 0, 1);
 }
+
 
 // Returns [[word,count], ...] sorted by count desc, only words that actually crossed the
 // repeat threshold (so single/incidental uses of a word never show up as a "violation").
@@ -145,10 +165,11 @@ function heuristicEvaluation({ transcript, topic, elapsedSec, violations }){
       weaknesses: [
         violations.fillerCount>fillerThreshold() ? `Frequent filler words reduced clarity (${violations.fillerCount} counted).` : null,
         violations.pauseCount>0 ? `${violations.pauseCount} long pause(s) interrupted the flow.` : null,
+        grammarScore<55 ? "Grammar and phrasing reduced the evaluation score." : null,
         overusedWordsList(violations.overusedWords).length
           ? `Repeated these words often (not part of the topic): ${overusedWordsList(violations.overusedWords).map(([w,c])=>`"${w}" (${c}x)`).join(", ")}.`
           : null,
-        topicScore<55 ? "Some parts drifted from the core topic." : null
+        (topicScore<55 && words.length>=8) ? "Some parts drifted from the core topic." : null
       ].filter(Boolean),
       suggestions: [
         "Practice pausing silently instead of using filler words.",

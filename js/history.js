@@ -7,7 +7,7 @@ function generateReportText(s){
   lines.push(`Topic   : ${s.topic}`);
   lines.push(`Date    : ${new Date(s.date).toLocaleString()}`);
   lines.push(`Duration: ${fmtTime(s.elapsed)}  ·  WPM: ${s.wpm}`);
-  lines.push(`Violations: Fillers ${s.violations.fillerCount} · Repeats ${s.violations.repeatCount} · Pauses ${s.violations.pauseCount}`);
+  lines.push(`Violations: Fillers ${s.violations.fillerCount} · Repeats ${s.violations.repeatCount} · Grammar ${s.violations.grammarCount || 0} · Pauses ${s.violations.pauseCount}`);
   if(s.violationCapReached){
     lines.push(`Violation limit (5) reached at: ${fmtTime(s.violationCapTime)}`);
   }
@@ -61,7 +61,7 @@ function renderHistory(){
       <div>
         <div style="font-weight:600;">${escapeHtml(s.name)}</div>
         <div style="font-size:12px; color:var(--ink-soft);">${escapeHtml(s.topic)}</div>
-        <div style="font-size:11px; color:var(--ink-soft); font-family:monospace;">${new Date(s.date).toLocaleString()} · WPM ${s.wpm} · Fillers ${s.violations.fillerCount} · Repeats ${s.violations.repeatCount} · Pauses ${s.violations.pauseCount}</div>
+        <div style="font-size:11px; color:var(--ink-soft); font-family:monospace;">${new Date(s.date).toLocaleString()} · WPM ${s.wpm} · Fillers ${s.violations.fillerCount} · Repeats ${s.violations.repeatCount} · Grammar ${s.violations.grammarCount || 0} · Pauses ${s.violations.pauseCount}</div>
       </div>
       <div class="hi-score">${s.scores.overall}</div>
     `;
