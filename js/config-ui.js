@@ -14,7 +14,7 @@ function renderConfig(){
 }
 document.getElementById("applyViolationBtn").addEventListener("click", ()=>{
   state.fillerThreshold = clamp(parseInt(document.getElementById("fillerThresholdInput").value,10) || 0, 0, 20);
-  state.repeatThreshold = clamp(parseInt(document.getElementById("repeatThresholdInput").value,10) || 3, 2, 10);
+  state.repeatThreshold = clamp(parseInt(document.getElementById("repeatThresholdInput").value,10) || 2, 2, 10);
   state.pauseThresholdSec = clamp(parseInt(document.getElementById("pauseThresholdInput").value,10) || 3, 1, 30);
   saveState();
   alert("Violation detection settings updated.");

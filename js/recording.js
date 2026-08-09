@@ -7,7 +7,7 @@ const VIOLATION_CAP = 5;       // combined total (fillers+repeats+pauses/grammar
 let violationCapReached = false; // true once the cap has been hit for this session
 let grammarViolationAlerted = false;
 let violationCapTime = null;     // elapsed seconds at the moment the cap was reached (noted separately)
-let lastFillerBeepCount = 0;   // filler word count at last alert
+let lastFillerViolationCount = 0;   // filler count at last violation event
 let repeatRunsAlerted = new Set(); // start-index of each immediate-repeat run already alerted on —
                                     // tracks every distinct incident (not just the single longest-ever
                                     // run), so a second separate "so so so" after an earlier "the the the"
@@ -32,7 +32,7 @@ let unconfirmedAcousticFillers = []; // timestamps of acoustic-only filler hits 
                                 // instead of letting countFillers() count it a second time.
 const ACOUSTIC_RECONCILE_WINDOW_MS = 3000; // how far back a late text match can still cancel out an
                                 // earlier acoustic-only hit for the same sound
-let pauseMultiplier = 0;       // how many pauseThresholdSec-sized chunks of the CURRENT silence gap have been counted
+let pauseIncidentOpen = false;       // whether the current silence interval has already generated a pause violation
 let fired = { pause:false };
 let timerInterval = null, pauseCheckInterval = null;
 let recognition = null, audioStream = null, analyser = null, rafId = null;
@@ -56,8 +56,8 @@ function resetRecordingUI(){
   phase = "ready"; elapsed = 0; transcript = ""; manualMode = !SR;
   updatePickLock();
   violations = { fillerCount:0, repeatCount:0, pauseCount:0, grammarCount:0, overusedWords:{} };
-  violationEvents = 0; lastFillerBeepCount = 0; repeatRunsAlerted = new Set();
-  overuseAlerted = {}; pauseMultiplier = 0; acousticFillerCount = 0; unconfirmedAcousticFillers = [];
+  violationEvents = 0; lastFillerViolationCount = 0; repeatRunsAlerted = new Set();
+  overuseAlerted = {}; pauseIncidentOpen = false; acousticFillerCount = 0; unconfirmedAcousticFillers = [];
   gotAnyRecognitionResult = false; consecutiveRecognitionErrors = 0;
   grammarViolationAlerted = false;
   voiceActive = false; voiceStartedAt = 0; wordsAtVoiceStart = 0; lastLiveInterim = ""; pendingBurstCheck = null;
@@ -117,24 +117,19 @@ function flashAlert(msg){
 }
 
 // Every violation type (filler, repeat, long pause) funnels through here so the
-// COMBINED total is capped at VIOLATION_CAP (5). Individual badges (Fillers/Repeats/
-// Pauses) keep counting normally for the breakdown. Once the combined total hits
-// the cap, the session ends immediately: the timer stops and results are shown.
+// combined total is tracked for display, but it does not stop the speaker or
+// terminate the session automatically. Individual badges (Fillers/Repeats/Pauses)
+// keep counting normally for the breakdown.
 function registerViolation(){
-  if(!violationCapReached){
-    violationEvents++;
-    if(violationEvents >= VIOLATION_CAP){
-      violationCapReached = true;
-      violationCapTime = elapsed;
-      const capBadge = document.getElementById("capBadge");
-      capBadge.textContent = "Limit reached at " + fmtTime(violationCapTime);
-      capBadge.style.display = "inline-block";
-      flashAlert(`Violation limit (${VIOLATION_CAP}) reached at ${fmtTime(violationCapTime)} — ending session now.`);
-      finishRecording();
-    }
+  violationEvents++;
+  if(!violationCapReached && violationEvents >= VIOLATION_CAP){
+    violationCapReached = true;
+    violationCapTime = elapsed;
+    const capBadge = document.getElementById("capBadge");
+    capBadge.textContent = "Limit reached at " + fmtTime(violationCapTime);
+    capBadge.style.display = "inline-block";
+    flashAlert(`Violation limit (${VIOLATION_CAP}) reached at ${fmtTime(violationCapTime)}. Session continues.`);
   }
-  // Once capped, further violations are still detected (per-category badges still
-  // update) but no longer add to the combined total.
 }
 
 // Violations are noted here — every violation (filler, repeat, overused word, long
@@ -156,19 +151,16 @@ function analyzeTranscript(full){
   // disfluency the recognizer never transcribed as text at all.
   const fillerCount = countFillers(full) + acousticFillerCount;
   violations.fillerCount = fillerCount;
-  if(fillerCount > lastFillerBeepCount){
-    lastFillerBeepCount = fillerCount;
-    // Register immediately on every new filler — no waiting for a threshold to
-    // pass, so detection feels instant instead of delayed. fillerThreshold() still
-    // controls the badge highlight and end-of-session feedback separately below.
+  if(fillerCount > fillerThreshold() && fillerCount > lastFillerViolationCount){
+    lastFillerViolationCount = fillerCount;
     registerViolation();
-    newAlert = `Filler word/sound noted (${fillerCount} so far).`;
+    newAlert = `Filler violation: ${fillerCount} occurrence${fillerCount===1?"":"s"} (threshold ${fillerThreshold()+1}).`;
   }
 
   // ---- Immediate back-to-back repeats ("the the the") ----
   const repeatRuns = detectImmediateRepeats(full, topic);
   repeatRuns.forEach(run=>{
-    if(run.len >= repeatThreshold() && !repeatRunsAlerted.has(run.startIndex)){
+    if(run.len > repeatThreshold() && !repeatRunsAlerted.has(run.startIndex)){
       repeatRunsAlerted.add(run.startIndex);
       violations.repeatCount++;
       registerViolation();
@@ -181,8 +173,8 @@ function analyzeTranscript(full){
   violations.overusedWords = overuse;
   Object.keys(overuse).forEach(word=>{
     const count = overuse[word];
-    if(count >= repeatThreshold() && count > (overuseAlerted[word]||0)){
-      overuseAlerted[word] = count;
+    if(count > repeatThreshold() && !overuseAlerted[word]){
+      overuseAlerted[word] = true;
       violations.repeatCount++;
       registerViolation();
       newAlert = newAlert || `Repeated word noted: "${word}" used ${count} times.`;
@@ -609,7 +601,7 @@ function startRecognition(){
 // recognizer restarts before it finalizes.
 function commitPendingInterim(){
   if(lastLiveInterim && lastLiveInterim.trim()){
-    transcript = (transcript + " " + lastLiveInterim).trim();
+    transcript = mergeTranscriptSegment(transcript, lastLiveInterim);
   }
   lastLiveInterim = "";
 }
@@ -628,7 +620,7 @@ document.getElementById("startBtn").addEventListener("click", async ()=>{
   phase = "recording";
   updatePickLock();
   fired = { pause:false };
-  violationEvents = 0; lastFillerBeepCount = 0; repeatRunsAlerted = new Set();
+  violationEvents = 0; lastFillerViolationCount = 0; repeatRunsAlerted = new Set();
   acousticFillerCount = 0; unconfirmedAcousticFillers = []; voiceActive = false; voiceStartedAt = 0; wordsAtVoiceStart = 0; lastLiveInterim = ""; pendingBurstCheck = null;
   voicedRatioSum = 0; voicedRatioSamples = 0; lastAcousticFillerAt = 0;
   violationCapReached = false; violationCapTime = null;
@@ -685,33 +677,20 @@ document.getElementById("startBtn").addEventListener("click", async ()=>{
     if(phase!=="recording") return;
     const silentFor = (Date.now()-lastSpeechAt)/1000;
     const threshold = pauseThresholdSec();
-    // How many whole "threshold-sized" chunks of the CURRENT silence gap have elapsed.
-    // A single very long pause now keeps counting as multiple violations (one per extra
-    // chunk of silence), instead of only ever flagging once no matter how long it runs.
-    const currentMultiple = Math.floor(silentFor / threshold);
-    if(silentFor>=threshold && currentMultiple>pauseMultiplier){
-      // Give a last chance to catch a filler/repeat word that only just finished
-      // being recognized - otherwise it gets misread as a long pause instead.
-      // Must include the still-interim (not yet finalized) chunk here too, same as
-      // every other analyzeTranscript call site - otherwise a filler/repeat word that
-      // is still mid-recognition at this exact instant is invisible to this check and
-      // gets wrongly logged as a long pause instead.
+    const isPaused = silentFor >= threshold;
+    if(isPaused && !pauseIncidentOpen){
       const caughtSomethingElse = analyzeTranscript((transcript + " " + lastLiveInterim).trim());
       if(phase!=="recording") return;
-      pauseMultiplier = currentMultiple;
-      // Only flag this as a long pause (and only add its own violation) if the
-      // last-chance check above didn't just catch a filler/repeat for this same
-      // gap — otherwise the pause alert was overwriting that message and this
-      // single gap was being counted as two violations instead of one.
+      pauseIncidentOpen = true;
+      violations.pauseCount++;
+      registerViolation();
       if(!caughtSomethingElse){
-        violations.pauseCount++;
-        registerViolation();
         flashAlert(`Long pause noted — ${Math.round(silentFor)}s of silence (speech continues).`);
       }
       updateStatsUI(transcript);
       return;
     }
-    if(silentFor<=threshold) pauseMultiplier = 0;
+    if(!isPaused) pauseIncidentOpen = false;
   }, 400);
 });
 

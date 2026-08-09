@@ -22,7 +22,7 @@ function currentFillerWords(){
   return FILLER_WORDS_BY_LANG[state.lang] || FILLER_WORDS_BY_LANG["en-US"];
 }
 function fillerThreshold(){ return state.fillerThreshold != null ? state.fillerThreshold : 2; }
-function repeatThreshold(){ return state.repeatThreshold != null ? state.repeatThreshold : 3; }
+function repeatThreshold(){ return state.repeatThreshold != null ? state.repeatThreshold : 2; }
 function pauseThresholdSec(){ return state.pauseThresholdSec != null ? state.pauseThresholdSec : 3; }
 // Acoustic filler-burst detection: works off raw mic volume, independent of speech-to-text,
 // so a short "umm"/"ahh" sound is still caught even when the recognizer never turns it into
@@ -85,7 +85,7 @@ const DEFAULT_TOPICS = [
 ];
 
 const STORE_KEY = "speechsense_full_state_v2";
-const SETTINGS_DEFAULTS = { sessionSeconds: 60, baseWPM: 130, beepEnabled: false, lang: "en-US", fillerThreshold: 3, repeatThreshold: 3, pauseThresholdSec: 3, transcriptionApiUrl: "" };
+const SETTINGS_DEFAULTS = { sessionSeconds: 60, baseWPM: 130, beepEnabled: false, lang: "en-US", fillerThreshold: 2, repeatThreshold: 2, pauseThresholdSec: 3, transcriptionApiUrl: "" };
 function loadState() {
   try {
     const raw = localStorage.getItem(STORE_KEY);

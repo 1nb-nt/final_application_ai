@@ -49,7 +49,12 @@ function mergeTranscriptSegment(existingText, incomingText){
   if(!existing) return incoming;
   const lowerExisting = existing.toLowerCase();
   const lowerIncoming = incoming.toLowerCase();
-  if(lowerExisting.endsWith(lowerIncoming) || lowerIncoming.endsWith(lowerExisting)) return existing;
-  if(lowerExisting.includes(lowerIncoming) || lowerIncoming.includes(lowerExisting)) return existing;
+  if(lowerIncoming.startsWith(lowerExisting)){
+    const suffix = incoming.slice(existing.length).trim();
+    return suffix ? `${existing} ${suffix}`.trim() : existing;
+  }
+  if(lowerExisting.startsWith(lowerIncoming)) return existing;
+  if(lowerIncoming.includes(lowerExisting)) return incoming;
+  if(lowerExisting.includes(lowerIncoming)) return existing;
   return `${existing} ${incoming}`.trim();
 }

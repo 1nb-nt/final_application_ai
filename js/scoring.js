@@ -37,12 +37,20 @@ function countFillers(transcript){
   }
   return total;
 }
+function fillerTokenSet(){
+  return new Set(currentFillerWords()
+    .flatMap(phrase => phrase.toLowerCase().split(/\s+/))
+    .map(token => token.replace(/[^a-z0-9]/g, ""))
+    .filter(Boolean));
+}
+
 function detectImmediateRepeats(transcript, topic = ""){
   // Strip punctuation before comparing words — otherwise "yeah," and "yeah" (or a
   // trailing period on only one occurrence) are treated as different words and a
   // genuine repeat goes undetected.
   const topicWords = topicWordSet(topic);
-  const words = transcript.toLowerCase().replace(/[^a-z0-9'\s]/g,"").split(/\s+/).filter(Boolean);
+  const fillerTokens = fillerTokenSet();
+  const words = transcript.toLowerCase().replace(/[^a-z0-9'\s]/g," ").split(/\s+/).filter(Boolean);
   // Returns EVERY maximal immediate-repeat run found (each tagged with the word and
   // the index it starts at), not just whichever single run is longest in the whole
   // transcript — so multiple separate repeat incidents (e.g. "the the the" ... later
@@ -51,7 +59,9 @@ function detectImmediateRepeats(transcript, topic = ""){
   let i=0;
   while(i<words.length){
     const word = words[i];
-    if(word.length<=1 || isTopicWord(word, topicWords)){ i++; continue; }
+    if(word.length<=1 || isTopicWord(word, topicWords) || GLOBAL_STOPWORDS.has(word) || fillerTokens.has(word)){
+      i++; continue;
+    }
     let j=i;
     while(j+1<words.length && words[j+1]===word) j++;
     const runLen = j-i+1;
@@ -95,14 +105,15 @@ function isTopicWord(word, topicWords){
 // title are deliberately excluded, since naturally repeating on-topic words isn't a violation.
 function detectOveruseWords(transcript, topic){
   const topicWords = topicWordSet(topic);
-  const fillerFlat = new Set(currentFillerWords().map(w=>w.replace(/\s+/g,"").replace(/[^a-z0-9]/gi,"").toLowerCase()));
+  const fillerTokens = fillerTokenSet();
   const words = extractContentWords(transcript);
   const freq = {};
   words.forEach(w=>{
     if(w.length<=2) return;
     if(GLOBAL_STOPWORDS.has(w)) return;
     if(isTopicWord(w, topicWords)) return;       // on-topic word — expected to repeat, not a violation
-    if(fillerFlat.has(w.replace(/[^a-z0-9]/gi,"").toLowerCase())) return;       // already tracked separately as a filler word
+    const cleaned = w.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    if(fillerTokens.has(cleaned)) return;       // already tracked separately as a filler word
     freq[w] = (freq[w]||0)+1;
   });
   return freq;
@@ -137,7 +148,7 @@ function topicOverlapScore(transcript, topicText){
 function overusedWordsList(overusedWords){
   if(!overusedWords) return [];
   return Object.entries(overusedWords)
-    .filter(([,count])=>count>=repeatThreshold())
+    .filter(([,count])=>count>repeatThreshold())
     .sort((a,b)=>b[1]-a[1]);
 }
 

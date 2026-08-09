@@ -19,13 +19,12 @@ const context = vm.createContext({
   state: {
     lang: 'en-US',
     fillerThreshold: 2,
-    repeatThreshold: 3,
+    repeatThreshold: 2,
     pauseThresholdSec: 3,
     baseWPM: 130,
     sessionSeconds: 60
   },
-  currentFillerWords: () => [],
-  repeatThreshold: () => 3
+  currentFillerWords: () => ['so', 'like', 'you know']
 });
 
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'utils.js'), 'utf8'), context);
@@ -61,6 +60,34 @@ test('detectImmediateRepeats ignores repeated words that are part of the topic t
 
 test('detectImmediateRepeats ignores singular/plural topic words', () => {
   assert.equal(context.detectImmediateRepeats('color color color', 'colors and shape').length, 0);
+});
+
+test('detectImmediateRepeats ignores common filler words like so and like', () => {
+  const repeats = context.detectImmediateRepeats('so so so like like like you know you know', 'public speaking');
+  assert.equal(repeats.length, 0);
+});
+
+test('detectImmediateRepeats flags the third immediate non-exempt repetition', () => {
+  const repeats = context.detectImmediateRepeats('important important important', 'public speaking');
+  assert.equal(repeats.length, 1);
+  assert.equal(repeats[0].len, 3);
+});
+
+test('detectOveruseWords counts three non-topic repetitions as an overuse violation candidate', () => {
+  const result = context.detectOveruseWords('important important important', 'public speaking');
+  assert.equal(result['important'], 3);
+});
+
+test('mergeTranscriptSegment avoids duplicate transcript material when interim commits', () => {
+  const merged = context.mergeTranscriptSegment('Today I want', 'today I want to talk');
+  assert.equal(merged, 'Today I want to talk');
+});
+
+test('detectOveruseWords ignores filler words and only flags true content overuse', () => {
+  const result = context.detectOveruseWords('so so so like like like hello hello hello', 'public speaking');
+  assert.equal(result['so'], undefined);
+  assert.equal(result['like'], undefined);
+  assert.equal(result['hello'], 3);
 });
 
 test('topicOverlapScore normalizes singular/plural when matching topic relevance', () => {
